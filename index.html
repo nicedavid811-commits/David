@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>房地產口碑評論生成器 AI</title>
+    
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 載入 Babel 用於解析 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- 設定樣式與動畫 -->
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 20px;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        @keyframes slide-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up {
+            animation: slide-up 0.5s ease-out forwards;
+        }
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans selection:bg-blue-100">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState } from 'https://esm.sh/react@18.2.0?dev';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client?dev';
+        import { 
+            Sparkles, Copy, Home, CheckCircle, RefreshCw, AlertCircle, Tag, Users, Quote, 
+            Search, Globe, ShieldCheck, AlertTriangle, Wand2, Share2, MessageSquare, 
+            Loader2, Eye, ThumbsDown, CheckCheck, HardHat 
+        } from 'https://esm.sh/lucide-react@0.300.0?dev';
+
+        const RealEstateReviewGen = () => {
+            // ⚠️ 請在這裡填入您的 Google Gemini API Key
+            const apiKey = "AIzaSyCnBqzVDOsP-69yDTOrWTSfFM5hG8KBLJM"; 
+
+            const [searchQuery, setSearchQuery] = useState('');
+            const [isGenericMode, setIsGenericMode] = useState(false);
+            const [projectStatus, setProjectStatus] = useState('預售');
+            const [features, setFeatures] = useState('');
+            const [selectedRoles, setSelectedRoles] = useState([]);
+            const [reviews, setReviews] = useState([]);
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [error, setError] = useState('');
+            const [copyStatus, setCopyStatus] = useState(null);
+            const [activeCategory, setActiveCategory] = useState("交通地段");
+            const [generationMode, setGenerationMode] = useState(null);
+            
+            const [rewritingIndex, setRewritingIndex] = useState(null);
+            const [analyzingIndex, setAnalyzingIndex] = useState(null);
+            const [isAnalyzingAll, setIsAnalyzingAll] = useState(false);
+            const [critiques, setCritiques] = useState({});
+
+            const statusOptions = [
+                { id: '預售', label: '預售屋', desc: '強調接待中心體驗、未來願景' },
+                { id: '結構體', label: '結構體', desc: '強調工程進度、看的到建築' },
+                { id: '成屋', label: '成屋', desc: '強調實際採光、公設、可立即入住' }
+            ];
+
+            const cleanJson = (text) => {
+                if (!text) return text;
+                let cleaned = text.replace(/```json\n?|```/g, '').trim();
+                const firstBracket = cleaned.indexOf('[');
+                const lastBracket = cleaned.lastIndexOf(']');
+                if (firstBracket !== -1 && lastBracket !== -1) {
+                return cleaned.substring(firstBracket, lastBracket + 1);
+                }
+                return cleaned;
+            };
+
+            const rolesList = ["首購族", "新婚夫妻", "換屋族", "在地鄰居", "投資客", "退休族", "注重細節者", "路過看屋"];
+
+            const tagCategories = [
+                {
+                name: "交通地段",
+                tags: ["近捷運站", "上交流道快", "雙鐵共構", "門口有公車", "交通樞紐", "走路到車站", "通勤方便"]
+                },
+                {
+                name: "生活機能",
+                tags: ["明星學區", "生活機能佳", "安靜巷弄", "公園第一排", "近百貨商圈", "傳統市場便利", "重劃區潛力", "便利商店多"]
+                },
+                {
+                name: "格局屋況",
+                tags: ["格局方正", "採光通風佳", "無敵景觀", "大陽台", "衛浴開窗", "高坪效", "動線流暢", "挑高空間", "樑柱外推"]
+                },
+                {
+                name: "社區規劃",
+                tags: ["知名建商", "公設豐富", "戶數單純", "物業管理好", "施工品質佳", "零店面", "外觀氣派", "垃圾處理方便"]
+                },
+                {
+                name: "銷售價格",
+                tags: ["總價親民", "適合首購", "代銷講解詳細", "CP值高", "具增值潛力", "不二價銷售", "低自備款", "優惠方案"]
+                }
+            ];
+
+            const addTag = (tag) => {
+                setFeatures(prev => prev ? `${prev}、${tag}` : tag);
+            };
+
+            const toggleRole = (role) => {
+                setSelectedRoles(prev => 
+                prev.includes(role) 
+                    ? prev.filter(r => r !== role)
+                    : [...prev, role]
+                );
+            };
+
+            const runCritique = async (reviewContent) => {
+                if (!apiKey) {
+                    setError('請先在程式碼中設定 API Key');
+                    return null;
+                }
+                const prompt = `
+                你是一位非常嚴格的【房地產代銷專案經理】。
+                請審視以下這則剛生成的 Google 評論，判斷它是否對建案有「扣分」風險。
+                建案目前階段為：${projectStatus}
+
+                評論內容：
+                "${reviewContent}"
+
+                請分析以下幾點：
+                1. **階段合理性**：內容是否符合「${projectStatus}」的特性？(例如預售屋卻說已經住進去，就是不合理)。
+                2. **擬真度檢核**：是否太像 AI 寫的？用詞是否太過矯情？
+                3. **反效果檢核**：是否無意間暴露了缺點？
+                4. **風險評估**：給予風險等級（🟢 安全 / 🟡 需注意 / 🔴 危險）。
+
+                請直接回傳簡短的分析結果。格式如下：
+                【風險等級：🟢 安全 / 🟡 需注意 / 🔴 危險】
+                評論分析：(你的分析內容)
+                建議修改：(一句話建議)
+                `;
+
+                try {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                    {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+                    }
+                );
+
+                if (!response.ok) throw new Error('Critique failed');
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text;
+                } catch (err) {
+                console.error("Critique error:", err);
+                return null;
+                }
+            };
+
+            const handleCritique = async (index) => {
+                setAnalyzingIndex(index);
+                const result = await runCritique(reviews[index].content);
+                if (result) {
+                setCritiques(prev => ({ ...prev, [index]: result }));
+                }
+                setAnalyzingIndex(null);
+            };
+
+            const handleCritiqueAll = async () => {
+                if (reviews.length === 0) return;
+                
+                setIsAnalyzingAll(true);
+                setCritiques({});
+                
+                const promises = reviews.map(async (review, index) => {
+                const result = await runCritique(review.content);
+                if (result) {
+                    setCritiques(prev => ({ ...prev, [index]: result }));
+                }
+                });
+
+                await Promise.allSettled(promises);
+                setIsAnalyzingAll(false);
+            };
+
+            const handleRewrite = async (index, mode) => {
+                if (!apiKey) {
+                    setError('請先在程式碼中設定 API Key');
+                    return;
+                }
+                setRewritingIndex(index);
+                const targetReview = reviews[index];
+
+                let instruction = "";
+                if (mode === 'shorter') {
+                instruction = "請將以下房地產評論改寫得更「簡短有力」，去除冗言贅字，但保留核心優勢，字數減少約 30%。";
+                } else if (mode === 'casual') {
+                instruction = "請將以下房地產評論改寫得更「生活化、口語化」，像是在 PTT 或 Dcard 的真實留言，語氣隨性一點，可以使用一些台灣常見的語助詞，不要太像作文。";
+                } else if (mode === 'social') {
+                instruction = "請將以下房地產評論改寫成一篇適合發布在 Facebook 或 Instagram 的「社群貼文」。請加入豐富的表情符號 (Emojis)，並在文末加上 3-5 個相關的熱門 Hashtags。";
+                }
+
+                const prompt = `
+                ${instruction}
+                原始評論內容：
+                "${targetReview.content}"
+                請直接回傳改寫後的內容，不要包含任何解釋或額外文字。`;
+
+                try {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                    {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+                    }
+                );
+
+                if (!response.ok) throw new Error('Rewrite failed');
+                const data = await response.json();
+                const newContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (newContent) {
+                    const updatedReviews = [...reviews];
+                    updatedReviews[index] = { ...updatedReviews[index], content: newContent.trim() };
+                    setReviews(updatedReviews);
+                    setCritiques(prev => {
+                    const newCritiques = { ...prev };
+                    delete newCritiques[index];
+                    return newCritiques;
+                    });
+                }
+                } catch (err) {
+                console.error("Rewrite error:", err);
+                } finally {
+                setRewritingIndex(null);
+                }
+            };
+
+            const generateReviews = async () => {
+                if (!apiKey) {
+                    setError('請先在程式碼中設定 API Key');
+                    return;
+                }
+                if (!features.trim() && !searchQuery.trim() && !isGenericMode) {
+                setError('請輸入建案名稱，或是勾選「不指定特定建案」');
+                return;
+                }
+
+                setIsGenerating(true);
+                setError('');
+                setReviews([]);
+                setCritiques({});
+                setGenerationMode(null);
+
+                let roleInstruction = "請模擬不同類型的真實人類（例如：剛結婚的小夫妻、路過的鄰居...）。";
+                if (selectedRoles.length > 0) {
+                roleInstruction = `請務必優先包含以下角色的評論視角：${selectedRoles.join('、')}。若選取角色少於 5 個，其餘請隨機模擬其他真實客群。`;
+                }
+
+                // 建案階段的指示詞
+                let statusInstruction = "";
+                if (projectStatus === '預售') {
+                statusInstruction = "建案階段為【預售屋】。評論重點應放在：接待中心的體驗、代銷人員的專業度、樣品屋的規劃、付款方式輕鬆、對未來發展的期待。切勿寫「已經住進去」或「實際採光如何」。";
+                } else if (projectStatus === '結構體') {
+                statusInstruction = "建案階段為【結構體中】。評論重點應放在：工程進度看得到、建築外觀逐漸成形、周邊環境的實際感受、期待交屋的心情。";
+                } else if (projectStatus === '成屋') {
+                statusInstruction = "建案階段為【新成屋/成屋】。評論重點應放在：實際看屋的空間感、採光通風的真實體驗、公設的質感、隨時可入住的便利性、施工細節品質。";
+                }
+
+                const genericSystemPrompt = `你是一位熟悉台灣房地產市場的口碑行銷專家。
+                你正在撰寫一組「通用型」的房地產好評，這組評論將被用於多個不同的建案。
+
+                【最高指導原則：通用性與真實感】
+                1. **階段性準確**：${statusInstruction}
+                2. **模糊化地點**：因為不指定建案，你**絕對禁止**提及任何具體的路名、捷運站名、行政區或地標。
+                3. **專注特色**：請完全依賴使用者提供的特色（${features}）來進行擴寫。
+                4. **擬真度**：語氣要像真的住戶或看屋客。
+                5. **角色與語氣**：${roleInstruction}。
+                6. **格式**：請務必輸出「純粹的 JSON Array 字串」。格式：[{ "role": "...", "stars": 4, "content": "..." }]。`;
+
+                const searchSystemPrompt = `你是一位熟悉台灣房地產市場的口碑行銷專家。
+                你的任務是為建案（${searchQuery}）撰寫 Google Maps 評論。
+
+                【最高指導原則：精準與真實】
+                1. **階段性準確**：${statusInstruction}
+                2. **綁定真實資訊**：你**必須**透過 Google Search 獲取建案真實資訊（行政區、路名、附近地標）。
+                3. **融合優勢**：將使用者強調的優勢（${features}）與搜尋到的真實資訊結合。
+                4. **防呆機制**：如果搜尋結果顯示該建案位於南部，但使用者的描述看似是北部建案，請以搜尋結果為準。
+                5. **角色與語氣**：${roleInstruction} 語氣要像真人。
+                6. **格式**：請務必輸出「純粹的 JSON Array 字串」，不要 Markdown。格式：[{ "role": "...", "stars": 4, "content": "..." }]。`;
+
+                const safeSystemPrompt = `你是一位熟悉台灣房地產市場的口碑行銷專家。
+                你正在為建案（${searchQuery}）撰寫評論。
+                
+                【最高指導原則：安全至上，禁止幻覺】
+                1. **階段性準確**：${statusInstruction}
+                2. **現況說明**：無法連線取得確切資料，你**絕對禁止**編造任何路名或地標。
+                3. **專注特色**：請完全依賴使用者提供的特色（${features}）來進行擴寫。
+                4. **角色與語氣**：${roleInstruction}。
+                5. **格式**：回傳 JSON Array。`;
+
+                const effectiveQuery = searchQuery.includes('建案') ? searchQuery : `台灣建案 ${searchQuery}`;
+
+                const userPrompt = `
+                ${isGenericMode ? '目標：撰寫通用房地產評論（不指定建案）' : `目標建案：${effectiveQuery}`}
+                建案階段：${projectStatus}
+                使用者想強調的賣點：${features}
+                請生成 5 則繁體中文評論。`;
+
+                try {
+                let response;
+                let modeUsed = 'safe';
+
+                if (isGenericMode) {
+                    modeUsed = 'generic';
+                    response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                        contents: [{ parts: [{ text: userPrompt }] }],
+                        systemInstruction: { parts: [{ text: genericSystemPrompt }] },
+                        generationConfig: { responseMimeType: "application/json" }
+                        }),
+                    }
+                    );
+                } else {
+                    if (searchQuery.trim()) {
+                    try {
+                        response = await fetch(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                            contents: [{ parts: [{ text: userPrompt }] }],
+                            systemInstruction: { parts: [{ text: searchSystemPrompt }] },
+                            tools: [{ google_search: {} }]
+                            }),
+                        }
+                        );
+                        if (response.ok) {
+                        modeUsed = 'search';
+                        } else {
+                        response = null; 
+                        }
+                    } catch (e) {
+                        response = null;
+                    }
+                    }
+
+                    if (!response || !response.ok) {
+                    console.log("Entering Safe Mode...");
+                    modeUsed = 'safe';
+                    response = await fetch(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                        {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: userPrompt }] }],
+                            systemInstruction: { parts: [{ text: safeSystemPrompt }] },
+                            generationConfig: { responseMimeType: "application/json" }
+                        }),
+                        }
+                    );
+                    }
+                }
+
+                if (!response.ok) throw new Error(`API 請求失敗 (${response.status})`);
+
+                const data = await response.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (text) {
+                    const cleanText = cleanJson(text);
+                    try {
+                    const parsedReviews = JSON.parse(cleanText);
+                    setReviews(parsedReviews);
+                    setGenerationMode(modeUsed);
+                    } catch (parseError) {
+                    throw new Error("AI 回傳格式異常，請再試一次");
+                    }
+                } else {
+                    throw new Error('AI 回傳內容為空');
+                }
+
+                } catch (err) {
+                setError(err.message || '發生未知錯誤');
+                console.error("Generate error:", err);
+                } finally {
+                setIsGenerating(false);
+                }
+            };
+
+            const copyToClipboard = (text, index) => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                document.execCommand('copy');
+                setCopyStatus(index);
+                setTimeout(() => setCopyStatus(null), 2000);
+                } catch (err) {
+                console.error('Copy failed', err);
+                }
+                document.body.removeChild(textArea);
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-blue-100 pb-12">
+                
+                {/* 頂部標題區 */}
+                <div className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+                    <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2 rounded-lg text-white shadow-md flex-shrink-0">
+                        <Home className="w-6 h-6" />
+                        </div>
+                        <div>
+                        <h1 className="text-lg md:text-xl font-bold text-slate-900 leading-none">房地產口碑生成器</h1>
+                        <p className="text-xs text-slate-500 mt-1 hidden md:block">AI 自動搜尋建案資訊 + 擬真好評助手</p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div className="max-w-6xl mx-auto p-4 md:p-6 grid lg:grid-cols-12 gap-6 md:gap-8 mt-2">
+                    
+                    {/* 左側：設定區 */}
+                    <div className="lg:col-span-5 space-y-6">
+
+                    {/* Step 1: 搜尋/網址 */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold">1</span>
+                        <h2 className="text-base font-bold text-slate-800">建案設定</h2>
+                        {isGenericMode ? (
+                            <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 ml-auto font-medium">通用模式</span>
+                        ) : (
+                            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 ml-auto font-medium">AI 搜尋模式</span>
+                        )}
+                        </div>
+                        <div className="p-4">
+                        <div className="mb-3 flex items-center">
+                            <input
+                            type="checkbox"
+                            id="genericMode"
+                            checked={isGenericMode}
+                            onChange={(e) => {
+                                setIsGenericMode(e.target.checked);
+                                if (e.target.checked) setSearchQuery('');
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                            />
+                            <label htmlFor="genericMode" className="ml-2 text-sm text-slate-700 font-medium cursor-pointer">
+                            我不指定特定建案 (啟用通用模式)
+                            </label>
+                        </div>
+
+                        <div className={`relative transition-all duration-300 ${isGenericMode ? 'opacity-50 grayscale' : ''}`}>
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Globe className="h-5 w-5 text-slate-400" />
+                            </div>
+                            <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            disabled={isGenericMode}
+                            placeholder={isGenericMode ? "通用模式下無需輸入建案名稱" : "例如：信義區某某建案、或貼上官網連結"}
+                            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-base bg-slate-50 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                            />
+                        </div>
+                        
+                        {/* 建案階段選擇 */}
+                        <div className="mt-4 pt-4 border-t border-slate-100">
+                            <label className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
+                            <HardHat className="w-4 h-4 text-blue-500" />
+                            建案階段
+                            </label>
+                            <div className="grid grid-cols-3 gap-2">
+                            {statusOptions.map((status) => (
+                                <button
+                                key={status.id}
+                                onClick={() => setProjectStatus(status.id)}
+                                className={`flex flex-col items-center justify-center p-2 rounded-lg border text-sm transition-all
+                                    ${projectStatus === status.id
+                                    ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold shadow-sm'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
+                                    }`}
+                                >
+                                <span>{status.label}</span>
+                                </button>
+                            ))}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2 bg-slate-50 p-2 rounded">
+                            👉 {statusOptions.find(s => s.id === projectStatus)?.desc}
+                            </p>
+                        </div>
+                        </div>
+                    </div>
+                    
+                    {/* Step 2: 特色與優勢 */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col lg:h-auto">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between flex-shrink-0">
+                        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs font-bold">2</span>
+                            補充特色
+                        </h2>
+                        <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">選填</span>
+                        </div>
+                        
+                        <div className="p-4 flex flex-col">
+                        <textarea
+                            value={features}
+                            onChange={(e) => setFeatures(e.target.value)}
+                            placeholder="除了搜尋到的資訊，您還想強調什麼？(點選下方標籤)"
+                            className="w-full px-4 py-3 border border-slate-200 rounded-xl h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none text-base bg-slate-50 mb-4 flex-shrink-0"
+                        />
+                        
+                        <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar flex-shrink-0">
+                            {tagCategories.map((cat) => (
+                            <button
+                                key={cat.name}
+                                onClick={() => setActiveCategory(cat.name)}
+                                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-all
+                                ${activeCategory === cat.name 
+                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                                {cat.name}
+                            </button>
+                            ))}
+                        </div>
+
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
+                            <div className="flex flex-wrap gap-2 content-start">
+                            {tagCategories.find(c => c.name === activeCategory)?.tags.map((tag) => (
+                                <button
+                                key={tag}
+                                onClick={() => addTag(tag)}
+                                className="px-3 py-2 bg-white text-slate-600 hover:text-blue-700 hover:border-blue-300 text-sm rounded-lg transition-all border border-slate-200 shadow-sm active:scale-95 text-left flex items-center gap-1 group"
+                                >
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-blue-500 flex-shrink-0"></span>
+                                {tag}
+                                </button>
+                            ))}
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+
+                    {/* Step 3: 角色設定 */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 text-xs font-bold">3</span>
+                            指定評論角色
+                            <span className="text-xs font-normal text-slate-400 ml-auto">可複選</span>
+                        </h2>
+                        </div>
+                        <div className="p-4 flex flex-wrap gap-2">
+                        {rolesList.map((role) => {
+                            const isSelected = selectedRoles.includes(role);
+                            return (
+                            <button
+                                key={role}
+                                onClick={() => toggleRole(role)}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all border
+                                ${isSelected 
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' 
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                                }`}
+                            >
+                                {role}
+                            </button>
+                            );
+                        })}
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div className="p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100 flex items-start gap-2 animate-fade-in">
+                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                        {error}
+                        </div>
+                    )}
+
+                    <button
+                        onClick={generateReviews}
+                        disabled={isGenerating}
+                        className={`w-full py-4 px-6 rounded-xl text-white font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                        ${isGenerating 
+                            ? 'bg-slate-400 cursor-not-allowed shadow-none translate-y-0' 
+                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                        }`}
+                    >
+                        {isGenerating ? (
+                        <>
+                            <Loader2 className="w-6 h-6 animate-spin" />
+                            正在生成...
+                        </>
+                        ) : (
+                        <>
+                            <Sparkles className="w-6 h-6" />
+                            AI 生成好評
+                        </>
+                        )}
+                    </button>
+                    </div>
+
+                    {/* 右側：結果展示區 */}
+                    <div className="lg:col-span-7 flex flex-col h-full">
+                    {/* Header 區域 */}
+                    <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
+                        <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            生成結果
+                            {reviews.length > 0 && (
+                            <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+                                {reviews.length} 則
+                            </span>
+                            )}
+                        </h2>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                        {/* 狀態指示標籤 */}
+                        {generationMode === 'search' && (
+                            <span className="hidden md:flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 animate-fade-in">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            Google 資料引用
+                            </span>
+                        )}
+                        {generationMode === 'safe' && (
+                            <span className="hidden md:flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-100 animate-fade-in">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            安全模式
+                            </span>
+                        )}
+                        {generationMode === 'generic' && (
+                            <span className="hidden md:flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100 animate-fade-in">
+                            <Globe className="w-3.5 h-3.5" />
+                            通用模式
+                            </span>
+                        )}
+
+                        {/* 一鍵健檢按鈕 (只有在有評論時顯示) */}
+                        {reviews.length > 0 && (
+                            <button
+                            onClick={handleCritiqueAll}
+                            disabled={isAnalyzingAll}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm border
+                                ${isAnalyzingAll 
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' 
+                                : 'bg-white text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300'
+                                }`}
+                            >
+                            {isAnalyzingAll ? (
+                                <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                全體審視中...
+                                </>
+                            ) : (
+                                <>
+                                <Eye className="w-3.5 h-3.5" />
+                                一鍵專家健檢
+                                </>
+                            )}
+                            </button>
+                        )}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 bg-slate-100 rounded-2xl p-1 overflow-hidden border border-slate-200 min-h-[500px]">
+                        {reviews.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 text-center space-y-4">
+                            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm mb-2">
+                            <Sparkles className="w-10 h-10 text-blue-200" />
+                            </div>
+                            <div>
+                            <h3 className="text-slate-600 font-medium text-lg">準備生成</h3>
+                            <p className="text-sm mt-1 max-w-xs mx-auto">
+                                1. 設定建案 (搜尋/通用模式 + 階段)<br/>
+                                2. 補充特色與選擇角色<br/>
+                                3. AI 為您撰寫擬真好評
+                            </p>
+                            </div>
+                        </div>
+                        ) : (
+                        <div className="h-full overflow-y-auto custom-scrollbar p-4 space-y-4">
+                            {reviews.map((review, idx) => (
+                            <div 
+                                key={idx} 
+                                className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-all group relative animate-slide-up"
+                                style={{ animationDelay: `${idx * 100}ms` }}
+                            >
+                                {/* Header */}
+                                <div className="flex justify-between items-start mb-4 border-b border-slate-50 pb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 flex items-center justify-center text-indigo-600 font-bold text-sm flex-shrink-0">
+                                    {review.role[0]}
+                                    </div>
+                                    <div className="flex flex-col">
+                                    <span className="text-sm font-bold text-slate-800 flex items-center gap-1">
+                                        {review.role}
+                                    </span>
+                                    <div className="flex text-amber-400 gap-0.5 text-xs">
+                                        {[...Array(review.stars)].map((_, i) => (
+                                        <svg key={i} className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                        </svg>
+                                        ))}
+                                    </div>
+                                    </div>
+                                </div>
+                                
+                                <button
+                                    onClick={() => copyToClipboard(review.content, idx)}
+                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium border flex-shrink-0
+                                    ${copyStatus === idx 
+                                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
+                                        : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-600'
+                                    }`}
+                                >
+                                    {copyStatus === idx ? (
+                                    <>
+                                        <CheckCircle className="w-3.5 h-3.5" />
+                                        已複製
+                                    </>
+                                    ) : (
+                                    <>
+                                        <Copy className="w-3.5 h-3.5" />
+                                        複製
+                                    </>
+                                    )}
+                                </button>
+                                </div>
+
+                                {/* Content */}
+                                <div className="relative mb-4">
+                                <Quote className="absolute -top-1 -left-1 w-6 h-6 text-slate-100 rotate-180 -z-0" />
+                                <div className="relative z-10 pl-2">
+                                    {rewritingIndex === idx ? (
+                                    <div className="flex items-center gap-2 text-slate-500 animate-pulse py-2">
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        <span className="text-sm">AI 正在重新撰寫中...</span>
+                                    </div>
+                                    ) : (
+                                    <p className="text-slate-700 leading-relaxed whitespace-pre-line text-sm md:text-base break-words">
+                                        {review.content}
+                                    </p>
+                                    )}
+                                </div>
+                                </div>
+
+                                {/* Critique Results (Experts Review) */}
+                                {critiques[idx] && (
+                                <div className="mb-4 bg-red-50 border border-red-100 rounded-lg p-3 text-sm animate-fade-in">
+                                    <div className="flex items-center gap-2 mb-2 font-bold text-red-800">
+                                    <Eye className="w-4 h-4" />
+                                    專家健檢報告
+                                    </div>
+                                    <div className="text-slate-700 whitespace-pre-line leading-relaxed">
+                                    {critiques[idx]}
+                                    </div>
+                                </div>
+                                )}
+                                {/* Loading State for Critique */}
+                                {(isAnalyzingAll && !critiques[idx]) || analyzingIndex === idx ? (
+                                <div className="mb-4 bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm animate-pulse flex items-center gap-2 text-slate-500">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    專家正在審視此評論中...
+                                </div>
+                                ) : null}
+
+                                {/* AI Actions Toolbar */}
+                                <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-50">
+                                <button
+                                    onClick={() => handleCritique(idx)}
+                                    disabled={analyzingIndex !== null || isAnalyzingAll}
+                                    className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50
+                                    ${critiques[idx] 
+                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                                        : 'bg-red-50 hover:bg-red-100 text-red-600'
+                                    }`}
+                                >
+                                    {analyzingIndex === idx ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                    critiques[idx] ? <CheckCheck className="w-3.5 h-3.5" /> : <ThumbsDown className="w-3.5 h-3.5" />
+                                    )}
+                                    {critiques[idx] ? '已審視 (點擊重測)' : '單則健檢'}
+                                </button>
+
+                                <button
+                                    onClick={() => handleRewrite(idx, 'shorter')}
+                                    disabled={rewritingIndex !== null || isAnalyzingAll}
+                                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50 ml-auto"
+                                >
+                                    <Wand2 className="w-3.5 h-3.5" />
+                                    變簡短
+                                </button>
+                                <button
+                                    onClick={() => handleRewrite(idx, 'casual')}
+                                    disabled={rewritingIndex !== null || isAnalyzingAll}
+                                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    更生活化
+                                </button>
+                                <button
+                                    onClick={() => handleRewrite(idx, 'social')}
+                                    disabled={rewritingIndex !== null || isAnalyzingAll}
+                                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                                >
+                                    <Share2 className="w-3.5 h-3.5" />
+                                    轉為社群貼文
+                                </button>
+                                </div>
+                            </div>
+                            ))}
+                        </div>
+                        )}
+                    </div>
+                    </div>
+                </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<RealEstateReviewGen />);
+    </script>
+</body>
+</html>
